@@ -12,7 +12,7 @@
     "@adiwajshing/baileys": "^4.4.0",
     "chalk": "^4.1.2",
     "fs": "^0.0.2",
-    "figlet": "^latest",
+    "figlet": "latest",
     "pino": "^7.0.5",
     "qrcode-terminal": "^0.12.0"
   }

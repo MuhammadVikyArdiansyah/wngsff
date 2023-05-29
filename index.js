@@ -1,148 +1,22 @@
-const sessionName = "auth_info_baileys";
-const owner = ["6285735980188"]; // Put your number here ex: ["62xxxxxxxxx"]
-const {
-  default: sansekaiConnect,
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeInMemoryStore,
-  jidDecode,
-  proto,
-  getContentType,
-} = require("@adiwajshing/baileys");
-const pino = require("pino");
-const { Boom } = require("@hapi/boom");
-const fs = require("fs");
-const axios = require("axios");
-const chalk = require("chalk");
+//add dependencies
+const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, useSingleFileAuthState } = require('@adiwajshing/baileys');
+const pino = require('pino');
+const { Boom } = require('@hapi/boom');
+const { state, saveState } = useSingleFileAuthState('./session.json');
+const chalk = require('chalk')
 const figlet = require("figlet");
-const _ = require("lodash");
-const PhoneNumber = require("awesome-phonenumber");
-
-const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
 
 const color = (text, color) => {
   return !color ? chalk.green(text) : chalk.keyword(color)(text);
 };
 
-function smsg(conn, m, store) {
-  if (!m) return m;
-  let M = proto.WebMessageInfo;
-  if (m.key) {
-    m.id = m.key.id;
-    m.isBaileys = m.id.startsWith("BAE5") && m.id.length === 16;
-    m.chat = m.key.remoteJid;
-    m.fromMe = m.key.fromMe;
-    m.isGroup = m.chat.endsWith("@g.us");
-    m.sender = conn.decodeJid((m.fromMe && conn.user.id) || m.participant || m.key.participant || m.chat || "");
-    if (m.isGroup) m.participant = conn.decodeJid(m.key.participant) || "";
-  }
-  if (m.message) {
-    m.mtype = getContentType(m.message);
-    m.msg = m.mtype == "viewOnceMessage" ? m.message[m.mtype].message[getContentType(m.message[m.mtype].message)] : m.message[m.mtype];
-    m.body =
-      m.message.conversation ||
-      m.msg.caption ||
-      m.msg.text ||
-      (m.mtype == "listResponseMessage" && m.msg.singleSelectReply.selectedRowId) ||
-      (m.mtype == "buttonsResponseMessage" && m.msg.selectedButtonId) ||
-      (m.mtype == "viewOnceMessage" && m.msg.caption) ||
-      m.text;
-    let quoted = (m.quoted = m.msg.contextInfo ? m.msg.contextInfo.quotedMessage : null);
-    m.mentionedJid = m.msg.contextInfo ? m.msg.contextInfo.mentionedJid : [];
-    if (m.quoted) {
-      let type = getContentType(quoted);
-      m.quoted = m.quoted[type];
-      if (["productMessage"].includes(type)) {
-        type = getContentType(m.quoted);
-        m.quoted = m.quoted[type];
-      }
-      if (typeof m.quoted === "string")
-        m.quoted = {
-          text: m.quoted,
-        };
-      m.quoted.mtype = type;
-      m.quoted.id = m.msg.contextInfo.stanzaId;
-      m.quoted.chat = m.msg.contextInfo.remoteJid || m.chat;
-      m.quoted.isBaileys = m.quoted.id ? m.quoted.id.startsWith("BAE5") && m.quoted.id.length === 16 : false;
-      m.quoted.sender = conn.decodeJid(m.msg.contextInfo.participant);
-      m.quoted.fromMe = m.quoted.sender === conn.decodeJid(conn.user.id);
-      m.quoted.text = m.quoted.text || m.quoted.caption || m.quoted.conversation || m.quoted.contentText || m.quoted.selectedDisplayText || m.quoted.title || "";
-      m.quoted.mentionedJid = m.msg.contextInfo ? m.msg.contextInfo.mentionedJid : [];
-      m.getQuotedObj = m.getQuotedMessage = async () => {
-        if (!m.quoted.id) return false;
-        let q = await store.loadMessage(m.chat, m.quoted.id, conn);
-        return exports.smsg(conn, q, store);
-      };
-      let vM = (m.quoted.fakeObj = M.fromObject({
-        key: {
-          remoteJid: m.quoted.chat,
-          fromMe: m.quoted.fromMe,
-          id: m.quoted.id,
-        },
-        message: quoted,
-        ...(m.isGroup ? { participant: m.quoted.sender } : {}),
-      }));
-
-    conn.sendImage = async (jid, path, caption = '', quoted = '', options) => {
-	let buffer = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
-        return await conn.sendMessage(jid, { image: buffer, caption: caption, ...options }, { quoted })
-    }
-      /**
-       *
-       * @returns
-       */
-      m.quoted.delete = () => conn.sendMessage(m.quoted.chat, { delete: vM.key });
-
-      /**
-       *
-       * @param {*} jid
-       * @param {*} forceForward
-       * @param {*} options
-       * @returns
-       */
-      m.quoted.copyNForward = (jid, forceForward = false, options = {}) => conn.copyNForward(jid, vM, forceForward, options);
-
-      /**
-       *
-       * @returns
-       */
-    m.quoted.download = () => conn.downloadMediaMessage(m.quoted);
-    }
-  }
-  if (m.msg.url) m.download = () => conn.downloadMediaMessage(m.msg);
-  m.text = m.msg.text || m.msg.caption || m.message.conversation || m.msg.contentText || m.msg.selectedDisplayText || m.msg.title || "";
-  /**
-   * Reply to this message
-   * @param {String|Object} text
-   * @param {String|false} chatId
-   * @param {Object} options
-   */
-  m.reply = (text, chatId = m.chat, options = {}) => (Buffer.isBuffer(text) ? conn.sendMedia(chatId, text, "file", "", m, { ...options }) : conn.sendText(chatId, text, m, { ...options }));
-  /**
-   * Copy this message
-   */
-  m.copy = () => exports.smsg(conn, M.fromObject(M.toObject(m)));
-
-  /**
-   *
-   * @param {*} jid
-   * @param {*} forceForward
-   * @param {*} options
-   * @returns
-   */
-  m.copyNForward = (jid = m.chat, forceForward = false, options = {}) => conn.copyNForward(jid, m, forceForward, options);
-
-  return m;
-}
-
-async function startHisoka() {
-  const { state, saveCreds } = await useMultiFileAuthState(`./${sessionName ? sessionName : "session"}`);
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
+//main func
+async function connectToWhatsapp() {
+const { version, isLatest } = await fetchLatestBaileysVersion();
+  console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`)
   console.log(
     color(
-      figlet.textSync("Wa-OpenAI", {
+      figlet.textSync("Responder", {
         font: "Standard",
         horizontalLayout: "default",
         vertivalLayout: "default",
@@ -151,216 +25,157 @@ async function startHisoka() {
       "green"
     )
   );
-
-  const client = sansekaiConnect({
-    logger: pino({ level: "silent" }),
+    //make new connection to whatsapp
+  const sock = makeWASocket({
+    logger: pino({ level: 'silent' }),
     printQRInTerminal: true,
-    browser: ["Wabot", "Safari", "5.1.7"],
+    browser: ['Whatsapp Bot', 'Safari', '1.0.0'],
     auth: state,
+    defaultQueryTimeoutMs: undefined,
   });
-
-  store.bind(client.ev);
-
-  client.ev.on("messages.upsert", async (chatUpdate) => {
-    //console.log(JSON.stringify(chatUpdate, undefined, 2))
-    try {
-      mek = chatUpdate.messages[0];
-      if (!mek.message) return;
-      mek.message = Object.keys(mek.message)[0] === "ephemeralMessage" ? mek.message.ephemeralMessage.message : mek.message;
-      if (mek.key && mek.key.remoteJid === "status@broadcast") return;
-      if (!client.public && !mek.key.fromMe && chatUpdate.type === "notify") return;
-      if (mek.key.id.startsWith("BAE5") && mek.key.id.length === 16) return;
-      m = smsg(client, mek, store);
-      require("./sansekai")(client, m, chatUpdate, store);
-    } catch (err) {
-      console.log(err);
-    }
-  });
-
-  // Handle error
-  const unhandledRejections = new Map();
-  process.on("unhandledRejection", (reason, promise) => {
-    unhandledRejections.set(promise, reason);
-    console.log("Unhandled Rejection at:", promise, "reason:", reason);
-  });
-  process.on("rejectionHandled", (promise) => {
-    unhandledRejections.delete(promise);
-  });
-  process.on("Something went wrong", function (err) {
-    console.log("Caught exception: ", err);
-  });
-
-  // Setting
-  client.decodeJid = (jid) => {
-    if (!jid) return jid;
-    if (/:\d+@/gi.test(jid)) {
-      let decode = jidDecode(jid) || {};
-      return (decode.user && decode.server && decode.user + "@" + decode.server) || jid;
-    } else return jid;
-  };
-
-  client.ev.on("contacts.update", (update) => {
-    for (let contact of update) {
-      let id = client.decodeJid(contact.id);
-      if (store && store.contacts) store.contacts[id] = { id, name: contact.notify };
-    }
-  });
-
-  client.getName = (jid, withoutContact = false) => {
-    id = client.decodeJid(jid);
-    withoutContact = client.withoutContact || withoutContact;
-    let v;
-    if (id.endsWith("@g.us"))
-      return new Promise(async (resolve) => {
-        v = store.contacts[id] || {};
-        if (!(v.name || v.subject)) v = client.groupMetadata(id) || {};
-        resolve(v.name || v.subject || PhoneNumber("+" + id.replace("@s.whatsapp.net", "")).getNumber("international"));
-      });
-    else
-      v =
-        id === "0@s.whatsapp.net"
-          ? {
-              id,
-              name: "WhatsApp",
-            }
-          : id === client.decodeJid(client.user.id)
-          ? client.user
-          : store.contacts[id] || {};
-    return (withoutContact ? "" : v.name) || v.subject || v.verifiedName || PhoneNumber("+" + jid.replace("@s.whatsapp.net", "")).getNumber("international");
-  };
-
-  client.setStatus = (status) => {
-    client.query({
-      tag: "iq",
-      attrs: {
-        to: "@s.whatsapp.net",
-        type: "set",
-        xmlns: "status",
-      },
-      content: [
-        {
-          tag: "status",
-          attrs: {},
-          content: Buffer.from(status, "utf-8"),
-        },
-      ],
-    });
-    return status;
-  };
-
-  client.public = true;
-
-  client.serializeM = (m) => smsg(client, m, store);
-  client.ev.on("connection.update", async (update) => {
+  //Looking for connection update
+  sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
-    if (connection === "close") {
-      let reason = new Boom(lastDisconnect?.error)?.output.statusCode;
-      if (reason === DisconnectReason.badSession) {
-        console.log(`Bad Session File, Please Delete Session and Scan Again`);
-        process.exit();
-      } else if (reason === DisconnectReason.connectionClosed) {
-        console.log("Connection closed, reconnecting....");
-        startHisoka();
-      } else if (reason === DisconnectReason.connectionLost) {
-        console.log("Connection Lost from Server, reconnecting...");
-        startHisoka();
-      } else if (reason === DisconnectReason.connectionReplaced) {
-        console.log("Connection Replaced, Another New Session Opened, Please Restart Bot");
-        process.exit();
-      } else if (reason === DisconnectReason.loggedOut) {
-        console.log(`Device Logged Out, Please Delete Folder Session yusril and Scan Again.`);
-        process.exit();
-      } else if (reason === DisconnectReason.restartRequired) {
-        console.log("Restart Required, Restarting...");
-        startHisoka();
-      } else if (reason === DisconnectReason.timedOut) {
-        console.log("Connection TimedOut, Reconnecting...");
-        startHisoka();
-      } else {
-        console.log(`Unknown DisconnectReason: ${reason}|${connection}`);
-        startHisoka();
+    if (connection === 'close') {
+      const shouldReconnect = (lastDisconnect.error === Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+      console.log(chalk.redBright(lastDisconnect.error + shouldReconnect));
+      if (shouldReconnect) {
+        connectToWhatsapp();
       }
-    } else if (connection === "open") {
-      console.log(color("Bot success conneted to server", "green"));
-      console.log(color("Donate for creator https://saweria.co/sansekai", "yellow"));
-      console.log(color("Type /menu to see menu"));
-      client.sendMessage(owner + "@s.whatsapp.net", { text: `Always Online: True` });
     }
-    // console.log('Connected...', update)
+    if (connection === 'open') {
+      console.log(chalk.blueBright('Koneksi Tersambung!'));
+    }
   });
+  sock.ev.on('creds.update', saveState);
+  //Listen For New Message
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type == 'notify') {
+      try {
+      //get sender number and message
+      const me = messages[0].key.remoteJid;
+      const m = messages[0];
+      const pushName = messages[0].pushName;
+      const body = messages[0].message.conversation;
+      const budy = body.toLowerCase();
+      
+      // Check if the message is a text message
+      if (messages[0].message?.conversation) {
+        const incomingMessages = messages[0].message.conversation;
 
-  client.ev.on("creds.update", saveCreds);
+        // Display sender data in terminal
+        console.log(chalk.green('[ PESAN MASUK! ]\nNomor' + me + '\nPesan: ' + incomingMessages));
+      } else if (messages[0].message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation) {
+        // If the message is a reply to another message
+        const incomingMessages = messages[0].message.extendedTextMessage.contextInfo.quotedMessage.conversation;
 
-  const getBuffer = async (url, options) => {
-    try {
-      options ? options : {};
-      const res = await axios({
-        method: "get",
-        url,
-        headers: {
-          DNT: 1,
-          "Upgrade-Insecure-Request": 1,
-        },
-        ...options,
-        responseType: "arraybuffer",
-      });
-      return res.data;
-    } catch (err) {
-      return err;
+        // Display sender data in terminal
+        console.log(chalk.green('[ PESAN MASUK! ]\nNomor' + me + '\nPesan: (Reply)'));
+      } else if (messages[0].message?.stickerMessage) {
+        // If the message is a sticker
+        const stickerMessage = messages[0].message.stickerMessage;
+
+        // Display sender data in terminal
+        console.log('[ PESAN MASUK! ]\nNomor' + me + '\nPesan: (Sticker)');
+      } else if (messages[0].message?.imageMessage) {
+        // If the message is an image
+        const imageMessage = messages[0].message.imageMessage;
+
+        // Display sender data in terminal
+        console.log('[ PESAN MASUK! ]\nNomor' + me + '\nPesan: (Image)');
+      } else if (messages[0].message?.audioMessage) {
+        // If the message is an audio
+        const audioMessage = messages[0].message.audioMessage;
+
+        // Display sender data in terminal
+        console.log('[ PESAN MASUK! ]\nNomor' + me + '\nPesan: (Audio)');
+      } else if (messages[0].message?.videoMessage) {
+        // If the message is an video
+        const videoMessage = messages[0].message.videoMessage;
+        // Display sender data in terminal
+        console.log('[ PESAN MASUK! ]\nNomor' + me + '\nPesan: (Video)');
+        } else {
+        console.log('Tipe pesan tidak didukung:', messages[0].message);
+       return;
+      }
+        const command = budy.split(' ')[0].toLowerCase();
+
+        // Menentukan jika pesan sesuai dengan command yang ada
+        const isCommandMatched = ['ping', 'cret', 'img', 'context'].includes(command);
+
+        // Mengirimkan status mengetik hanya saat pesan sesuai dengan command
+        if (isCommandMatched) {
+          sock.sendPresenceUpdate('composing', me);
+        }
+
+        //autoreply
+        switch (budy) {
+          case 'ping':
+            await sock.sendMessage(me, { text: 'Pong!' }, { quoted: m }, 2000);
+            break;
+          case 'cret':
+            await sock.sendMessage(me, { text: 'crit' }, { quoted: m }, 2000);
+            break;
+          case 'img':
+            await sock.sendMessage(
+              me,
+              { image: { url: 'https://telegra.ph/file/e6391dee3877e227563d0.jpg' }, caption: 'Minaj' },
+              { quoted: m },
+              2000
+            );
+            break;
+          case 'context':
+            await sock.sendMessage(me, {
+              text: 'tes',
+              contextInfo: {
+                externalAdReply: {
+                  title: '',
+                  body: '',
+                  thumbnailUrl: 'https://telegra.ph/file/c43ee155efc11b774bee3.jpg',
+                  sourceUrl: '',
+                  mediaType: 1,
+                  renderLargerThumbnail: true,
+                },
+              },
+            });
+            break;
+          case 'ceplok':
+            var ceplok = ['🤓', '🤗', '😑', '😵'];
+            await sock.sendMessage(me, { text: `${ceplok[Math.floor(Math.random() * ceplok.length)]}` }, { quoted: m });
+            break;
+         case '🤓': case '🤗': case '😑': case '😵':
+         let media = `https://s27.aconvert.com/convert/p3r68-cdx67/hnsl4-92w8c.mp3`
+         await sock.sendMessage(me, { audio: { url: media }}, { quoted: m})
+         break;
+         case 'lapar':
+        await sock.sendMessage(me, { text: `┅═┅═❏ *Warung Barokah* ❏═┅═┅
+
+Sedia :
+
+• Ayam Goreng 🍗 *Rp. 7k*
+• Gurame Goreng 🐟 *Rp. 8k*
+• Pecel Lele ❔ *Rp. 8k*
+• Mi Goreng 🍝 *Rp. 5k*
+
+• Es Teh 🥃 *Rp. 2k*
+• Kopi Hitam / Kopi Susu ☕ *Rp. 3k*
+• Susu Hangat / Dingin 🥛 *Rp. 4k*
+• Minuman Jus Instan 🧃 *Rp. 2-5k*
+
+*Menu makanan diatas sudah dilengkapi dengan Nasi Hangat dan Sambal sesuai dengan selera anda😋
+( Kecuali Mi Goreng tanpa Dilengkapi Nasi atau Sambal )` }, { quoted: m })
+break
+        }
+
+        //catch the error
+      } catch (error) {
+        console.log(error);
+      }
     }
-  };
-
-  client.sendImage = async (jid, path, caption = "", quoted = "", options) => {
-    let buffer = Buffer.isBuffer(path)
-      ? path
-      : /^data:.*?\/.*?;base64,/i.test(path)
-      ? Buffer.from(path.split`,`[1], "base64")
-      : /^https?:\/\//.test(path)
-      ? await await getBuffer(path)
-      : fs.existsSync(path)
-      ? fs.readFileSync(path)
-      : Buffer.alloc(0);
-    return await client.sendMessage(jid, { image: buffer, caption: caption, ...options }, { quoted });
-  };
-
-  client.sendText = (jid, text, quoted = "", options) => client.sendMessage(jid, { text: text, ...options }, { quoted });
-
-  client.cMod = (jid, copy, text = "", sender = client.user.id, options = {}) => {
-    //let copy = message.toJSON()
-    let mtype = Object.keys(copy.message)[0];
-    let isEphemeral = mtype === "ephemeralMessage";
-    if (isEphemeral) {
-      mtype = Object.keys(copy.message.ephemeralMessage.message)[0];
-    }
-    let msg = isEphemeral ? copy.message.ephemeralMessage.message : copy.message;
-    let content = msg[mtype];
-    if (typeof content === "string") msg[mtype] = text || content;
-    else if (content.caption) content.caption = text || content.caption;
-    else if (content.text) content.text = text || content.text;
-    if (typeof content !== "string")
-      msg[mtype] = {
-        ...content,
-        ...options,
-      };
-    if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant;
-    else if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant;
-    if (copy.key.remoteJid.includes("@s.whatsapp.net")) sender = sender || copy.key.remoteJid;
-    else if (copy.key.remoteJid.includes("@broadcast")) sender = sender || copy.key.remoteJid;
-    copy.key.remoteJid = jid;
-    copy.key.fromMe = sender === client.user.id;
-
-    return proto.WebMessageInfo.fromObject(copy);
-  };
-
-  return client;
+  });
 }
 
-startHisoka();
-
-let file = require.resolve(__filename);
-fs.watchFile(file, () => {
-  fs.unwatchFile(file);
-  console.log(chalk.redBright(`Update ${__filename}`));
-  delete require.cache[file];
-  require(file);
+//start functions
+connectToWhatsapp().catch((err) => {
+  console.log(err);
 });

@@ -98,74 +98,9 @@ const { version, isLatest } = await fetchLatestBaileysVersion();
         console.log('Tipe pesan tidak didukung:', messages[0].message);
        return;
       }
-        const command = budy.split(' ')[0].toLowerCase();
-
-        // Menentukan jika pesan sesuai dengan command yang ada
-        const isCommandMatched = ['ping', 'cret', 'img', 'context'].includes(command);
-
-        // Mengirimkan status mengetik hanya saat pesan sesuai dengan command
-        if (isCommandMatched) {
-          sock.sendPresenceUpdate('composing', me);
-        }
-
+        
         //autoreply
-        switch (budy) {
-          case 'ping':
-            await sock.sendMessage(me, { text: 'Pong!' }, { quoted: m }, 2000);
-            break;
-          case 'cret':
-            await sock.sendMessage(me, { text: 'crit' }, { quoted: m }, 2000);
-            break;
-          case 'img':
-            await sock.sendMessage(
-              me,
-              { image: { url: 'https://telegra.ph/file/e6391dee3877e227563d0.jpg' }, caption: 'Minaj' },
-              { quoted: m },
-              2000
-            );
-            break;
-          case 'context':
-            await sock.sendMessage(me, {
-              text: 'tes',
-              contextInfo: {
-                externalAdReply: {
-                  title: '',
-                  body: '',
-                  thumbnailUrl: 'https://telegra.ph/file/c43ee155efc11b774bee3.jpg',
-                  sourceUrl: '',
-                  mediaType: 1,
-                  renderLargerThumbnail: true,
-                },
-              },
-            });
-            break;
-          case 'ceplok':
-            var ceplok = ['🤓', '🤗', '😑', '😵'];
-            await sock.sendMessage(me, { text: `${ceplok[Math.floor(Math.random() * ceplok.length)]}` }, { quoted: m });
-            break;
-         case '🤓': case '🤗': case '😑': case '😵':
-         let media = `https://s27.aconvert.com/convert/p3r68-cdx67/hnsl4-92w8c.mp3`
-         await sock.sendMessage(me, { audio: { url: media }}, { quoted: m})
-         break;
-         case 'lapar':
-        await sock.sendMessage(me, { text: `┅═┅═❏ *Warung Barokah* ❏═┅═┅
-
-Sedia :
-
-• Ayam Goreng 🍗 *Rp. 7k*
-• Gurame Goreng 🐟 *Rp. 8k*
-• Pecel Lele ❔ *Rp. 8k*
-• Mi Goreng 🍝 *Rp. 5k*
-
-• Es Teh 🥃 *Rp. 2k*
-• Kopi Hitam / Kopi Susu ☕ *Rp. 3k*
-• Susu Hangat / Dingin 🥛 *Rp. 4k*
-• Minuman Jus Instan 🧃 *Rp. 2-5k*
-
-*Menu makanan diatas sudah dilengkapi dengan Nasi Hangat dan Sambal sesuai dengan selera anda😋
-( Kecuali Mi Goreng tanpa Dilengkapi Nasi atau Sambal )` }, { quoted: m })
-break
-        }
+         //nothing
 
         //catch the error
       } catch (error) {

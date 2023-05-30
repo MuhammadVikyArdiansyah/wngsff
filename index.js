@@ -58,7 +58,8 @@ const { version, isLatest } = await fetchLatestBaileysVersion();
       const pushName = messages[0].pushName;
       const body = messages[0].message.conversation;
       const budy = body.toLowerCase();
-      
+      const isGroup = me.includes("@g.us");
+        
       // Check if the message is a text message
       if (messages[0].message?.conversation) {
         const incomingMessages = messages[0].message.conversation;
@@ -100,7 +101,12 @@ const { version, isLatest } = await fetchLatestBaileysVersion();
       }
         
         //autoreply
-         //nothing
+       
+       if(!isGroup) {
+         if(body.toLowerCase() === 'tes') {
+         sock.sendMessage(me, { text: 'Ya' }, {quoted: m})
+           }
+         }
 
         //catch the error
       } catch (error) {
